@@ -1,52 +1,49 @@
+require('dotenv').config() // load all envoirnment variables
 const express = require('express');
 const bodyParser = require('body-parser');
 const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(bodyParser.urlencoded({extended:false}))
-app.use(bodyParser.json())
+app.use(express.json())
+app.use(express.static("public"))
 
 const PUBLISABLE_KEY = "pk_test_51NVwfyJYfAOHgc927UaDYGPJLyzGtD1tKsPJtS0WfjXFTUn9hHAAbQeJIbhmEXPdKsQRh19SSYkBWophCRmbvMSb00qPm0NmAI";
-const SECRET_KEY = "sk_test_51NVwfyJYfAOHgc92MOn29rqXY3ZRzvipo1suxMXIZTM7kPgCrHJMOZCr2bKN2Fpny02NekmDO3yWqmB2WgNUmOJ0002j7NAUCt";
-const stripe = require('stripe')(SECRET_KEY)
+const stripe = require('stripe')(process.env.STRIPE_PRIVATE_KEY)
 
-app.set("view engine", "ejs")
 
-app.get('/', (req, res) => {
-    res.render("Home", {
-        key: PUBLISABLE_KEY
-    })
-})
+const storeItems = new Map([
+    [1, {priceInCents: 10000, name: "Productivity course"}],
+    [2, {priceInCents: 30000, name: "Communication skill course"}]
+])
 
-app.post('/payment', (req, res) => {
-    stripe.customers.create({
-        email: req.body.stripeEmail,
-        source: req.body.stripeToken,
-        name: 'Gautam Sharma',
-        address: {
-            line1: "165 Choi East Attock",
-            postal_code: "64300",
-            city: "Attock",
-            state: "Attock",
-            country: "India"
-        }
-    })
-    .then((customer) => {
-        return stripe.charges.create({
-            amount: 7000,
-            description: "Web Development Product",
-            currency: 'USD',
-            customer: customer.id
+app.post('/create-checkout-session', async (req, res) => {
+    // console.log(req.body.items)
+    try {
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            mode: 'payment',
+            line_items: req.body.items.map(item => {
+                const storeItem = storeItems.get(item.id)
+                console.log(storeItem)
+                return {
+                    price_data: {
+                        currency: 'usd',
+                        product_data: {
+                            name: storeItem.name
+                        },
+                        unit_amount: storeItem.priceInCents
+                    },
+                    quantity: item.quantity
+                }
+            }),
+            success_url: `${process.env.SERVER_URL}/success.html`,
+            cancel_url: `${process.env.SERVER_URL}/cancel.html`
         })
-    })
-    .then((charge) => {
-        console.log(charge)
-        res.send("Success")
-    })
-    .catch(error => {
-        res.send(error)
-    })
+        res.json({url: session.url})
+    } catch (e) {
+        res.status(500).json({error: e.message})
+    }
 })
 
 app.listen(PORT, () => {
